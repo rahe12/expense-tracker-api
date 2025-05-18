@@ -1,40 +1,55 @@
-// Top of file
 require('dotenv').config();
-console.log('✅ Environment loaded:', {
-  PORT: process.env.PORT,
-  DB: process.env.DATABASE_URL?.split('@')[1]?.split('/')[0] // Hide credentials
-});
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const app = express();
 
-// Database connection test
-const { Pool } = require('pg');
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Database connection (add this if using DB)
+const pool = require('./config/db'); // Example path
+
+// Test DB connection (optional)
 pool.query('SELECT NOW()')
   .then(() => console.log('✅ Database connected'))
-  .catch(err => {
-    console.error('❌ Database connection failed', err);
-    process.exit(1);
-  });
+  .catch(err => console.error('❌ DB connection failed:', err));
 
-// Server setup
-const express = require('express');
-const app = express();
-app.use(express.json());
+// ======================
+// Route Imports
+// ======================
+const authRoutes = require('./routes/authRoutes');
+const expenseRoutes = require('./routes/expenseRoutes'); // Example additional route
+
+// ======================
+// Mount Routes
+// ======================
+app.use('/api/auth', authRoutes);
+app.use('/api/expenses', expenseRoutes); // Example additional route
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date() });
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'running', 
+    timestamp: new Date() 
+  });
 });
 
-// Error handling
-process.on('unhandledRejection', (err) => {
-  console.error('⚠️ Unhandled rejection:', err);
+// ======================
+// Error Handling
+// ======================
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+// For Vercel deployment (required)
+module.exports = app;
+
+// Local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
