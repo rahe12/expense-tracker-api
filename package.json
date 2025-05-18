@@ -8,8 +8,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
-    "migrate:down": "node-pg-migrate down"
-     "build": "npm install --omit=dev && npm run migrate:up"
+    "migrate:down": "node-pg-migrate down",
+    "build": "npm install --omit=dev && npm run migrate:up"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +29,6 @@
     "nodemon": "^3.1.10"
   },
   "engines": {
-  "node": "18.x"
-}
+    "node": "18.x"
+  }
 }
