@@ -14,11 +14,9 @@ const MESSAGES = {
       overweight: "CON Conseils : Réduisez l'apport calorique, augmentez l'activité physique, consultez un médecin.\n0. Retour\n\nChoisissez un numéro :",
       obese: "CON Conseils : Consultez un médecin, adoptez une alimentation saine, faites de l'exercice sous supervision.\n0. Retour\n\nChoisissez un numéro :"
     },
-    INVALID: "END Entrée invalide.",
-    INVALID_CHOICE: "END Choix invalide.",
-    ERROR: "END Le système est en maintenance. Veuillez réessayer plus tard.",
-    BACK: "Retour",
-    CHOOSE: "Choisissez un numéro :"
+    INVALID: "END Entrée invalide. Veuillez réessayer.",
+    INVALID_CHOICE: "END Choix invalide. Veuillez réessayer.",
+    ERROR: "END Le système est en maintenance. Veuillez réessayer plus tard."
   },
   kinyarwanda: {
     WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
@@ -31,12 +29,19 @@ const MESSAGES = {
       overweight: "CON Inama : Gukuramo kalori, ongeramo imyirambere, wasanga umuganga.\n0. Subira inyuma\n\nHitamo nimero :",
       obese: "CON Inama : Sura umuganga, tangira kurya ibiryo by'ubuzima, korikora imyirambere ufashijwe.\n0. Subira inyuma\n\nHitamo nimero :"
     },
-    INVALID: "END Injiza nabi. Kanda * ukongere utangire.",
-    INVALID_CHOICE: "END Guhitamo nabi. Kanda * ukongere utangire.",
-    ERROR: "END Sisitemu iri mu bikorwa byo kuyisana. Ongera ugerageze nyuma.",
-    BACK: "Subira inyuma",
-    CHOOSE: "Hitamo nimero :"
+    INVALID: "END Injiza nabi. Ongera ugerageze.",
+    INVALID_CHOICE: "END Guhitamo nabi. Ongera ugerageze.",
+    ERROR: "END Sisitemu iri mu bikorwa byo kuyisana. Ongera ugerageze nyuma."
   }
+};
+
+// Navigation states
+const STATES = {
+  WELCOME: 'welcome',
+  WEIGHT: 'weight',
+  HEIGHT: 'height',
+  RESULT: 'result',
+  TIPS: 'tips'
 };
 
 // In-memory session storage
@@ -52,11 +57,10 @@ const server = http.createServer((req, res) => {
         const text = (parsedBody.text || '').trim();
         const sessionId = parsedBody.sessionId || Date.now().toString();
         const phoneNumber = parsedBody.phoneNumber || 'unknown';
-        const input = text.split('*').filter(segment => segment.match(/^\d+$/));
 
-        console.log('Received text:', input, 'Session ID:', sessionId);
+        console.log('Received text:', text, 'Session ID:', sessionId);
 
-        let response = processUSSDFlow(input, sessionId);
+        let response = processUSSDFlow(text, sessionId);
 
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end(response);
@@ -72,540 +76,259 @@ const server = http.createServer((req, res) => {
   }
 });
 
-function processUSSDFlow(input, sessionId) {
-  // Initialize session if not exists
-  if (!sessions[sessionId]) {
-    sessions[sessionId] = {
-      state: 'welcome',
-      language: 'french',
-      weight: null,
-      height: null,
-      bmi: null,
-      category: null,
-      lastInputLevel: 0
-    };
-  }
+function initializeSession(sessionId) {
+  return {
+    state: STATES.WELCOME,
+    language: 'french',
+    weight: null,
+    height: null,
+    bmi: null,
+    category: null,
+    navigationStack: [STATES.WELCOME],
+    lastActivity: Date.now()
+  };
+}
 
-  const session = sessions[sessionId];
-
-  // Clean up old sessions (older than 30 minutes)
+function cleanupSessions() {
   const now = Date.now();
+  const THIRTY_MINUTES = 30 * 60 * 1000;
+  
   for (const sid in sessions) {
-    if (now - (sessions[sid].lastActivity || now) > 30 * 60 * 1000) {
+    if (now - sessions[sid].lastActivity > THIRTY_MINUTES) {
       delete sessions[sid];
     }
   }
-  session.lastActivity = now;
+}
 
-  // Empty input - show welcome screen and reset session
-  if (input.length === 0) {
-    console.log('Showing welcome screen');
-    session.state = 'welcome';
-    session.language = 'french';
-    session.weight = null;
-    session.height = null;
-    session.bmi = null;
-    session.category = null;
-    session.lastInputLevel = 0;
+function goBack(session) {
+  // Remove current state from stack
+  if (session.navigationStack.length > 1) {
+    session.navigationStack.pop();
+    session.state = session.navigationStack[session.navigationStack.length - 1];
+  } else {
+    // If no previous state, go to welcome
+    session.state = STATES.WELCOME;
+    session.navigationStack = [STATES.WELCOME];
+  }
+  
+  // Clear data based on current state
+  switch (session.state) {
+    case STATES.WELCOME:
+      session.language = 'french';
+      session.weight = null;
+      session.height = null;
+      session.bmi = null;
+      session.category = null;
+      break;
+    case STATES.WEIGHT:
+      session.weight = null;
+      session.height = null;
+      session.bmi = null;
+      session.category = null;
+      break;
+    case STATES.HEIGHT:
+      session.height = null;
+      session.bmi = null;
+      session.category = null;
+      break;
+    case STATES.RESULT:
+      session.bmi = null;
+      session.category = null;
+      break;
+  }
+}
+
+function navigateToState(session, newState) {
+  session.state = newState;
+  session.navigationStack.push(newState);
+}
+
+function calculateBMI(weight, height) {
+  const heightM = height / 100;
+  const bmi = (weight / (heightM * heightM)).toFixed(1);
+  
+  let category;
+  if (bmi < 18.5) {
+    category = 'underweight';
+  } else if (bmi >= 18.5 && bmi < 25) {
+    category = 'normal';
+  } else if (bmi >= 25 && bmi < 30) {
+    category = 'overweight';
+  } else {
+    category = 'obese';
+  }
+  
+  return { bmi, category };
+}
+
+function getCategoryTranslation(category, language) {
+  const translations = {
+    french: {
+      underweight: 'Insuffisance pondérale',
+      normal: 'Normal',
+      overweight: 'Surpoids',
+      obese: 'Obésité'
+    },
+    kinyarwanda: {
+      underweight: 'Ibiro bike',
+      normal: 'Bisanzwe',
+      overweight: 'Ibiro byinshi',
+      obese: 'Umunani'
+    }
+  };
+  
+  return translations[language][category];
+}
+
+function processUSSDFlow(text, sessionId) {
+  // Initialize or get session
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = initializeSession(sessionId);
+  }
+  
+  const session = sessions[sessionId];
+  session.lastActivity = Date.now();
+  
+  // Clean up old sessions
+  cleanupSessions();
+  
+  // Parse input - extract only numeric choices
+  const inputParts = text.split('*');
+  const lastInput = inputParts[inputParts.length - 1];
+  
+  console.log(`Session ${sessionId}: State=${session.state}, Input='${lastInput}', Stack=${JSON.stringify(session.navigationStack)}`);
+  
+  // Handle empty input or new session
+  if (!text || text === '') {
+    session.state = STATES.WELCOME;
+    session.navigationStack = [STATES.WELCOME];
     return MESSAGES.french.WELCOME;
   }
-
-  // First level: Language selection
-  if (input.length === 1) {
-    const choice = input[0];
-    if (choice === '0' && session.state !== 'welcome') {
-      console.log('Going back to welcome screen from language selection');
-      session.state = 'welcome';
-      session.language = 'french';
-      session.weight = null;
-      session.height = null;
-      session.bmi = null;
-      session.category = null;
-      session.lastInputLevel = 0;
+  
+  // Route based on current state
+  switch (session.state) {
+    case STATES.WELCOME:
+      return handleWelcomeState(session, lastInput);
+    
+    case STATES.WEIGHT:
+      return handleWeightState(session, lastInput);
+    
+    case STATES.HEIGHT:
+      return handleHeightState(session, lastInput);
+    
+    case STATES.RESULT:
+      return handleResultState(session, lastInput);
+    
+    case STATES.TIPS:
+      return handleTipsState(session, lastInput);
+    
+    default:
+      // Reset to welcome if unknown state
+      session.state = STATES.WELCOME;
+      session.navigationStack = [STATES.WELCOME];
       return MESSAGES.french.WELCOME;
-    }
-    if (choice === '1') {
-      session.language = 'french';
-      session.state = 'weight';
-      session.lastInputLevel = 1;
-      console.log('Language selected: French');
-      return MESSAGES.french.ENTER_WEIGHT;
-    } else if (choice === '2') {
-      session.language = 'kinyarwanda';
-      session.state = 'weight';
-      session.lastInputLevel = 1;
-      console.log('Language selected: Kinyarwanda');
-      return MESSAGES.kinyarwanda.ENTER_WEIGHT;
-    } else {
-      console.log('Invalid language selection:', choice);
-      return MESSAGES.french.INVALID;
-    }
   }
+}
 
-  // Second level: Weight input or back
-  if (input.length === 2) {
-    const lang = session.language;
-    const choice = input[1];
-
-    if (choice === '0') {
-      console.log('Going back to welcome screen from weight input');
-      session.state = 'welcome';
-      session.language = 'french';
-      session.weight = null;
-      session.height = null;
-      session.bmi = null;
-      session.category = null;
-      session.lastInputLevel = 1;
-      return MESSAGES.french.WELCOME;
-    }
-
-    if (!isNaN(choice) && Number(choice) > 0) {
-      session.weight = parseFloat(choice);
-      session.state = 'height';
-      session.lastInputLevel = 2;
-      console.log('Weight entered:', session.weight);
-      return MESSAGES[lang].ENTER_HEIGHT;
-    } else {
-      console.log('Invalid weight input:', choice);
-      return MESSAGES[lang].INVALID;
-    }
+function handleWelcomeState(session, input) {
+  if (input === '1') {
+    session.language = 'french';
+    navigateToState(session, STATES.WEIGHT);
+    console.log('Language selected: French');
+    return MESSAGES.french.ENTER_WEIGHT;
+  } else if (input === '2') {
+    session.language = 'kinyarwanda';
+    navigateToState(session, STATES.WEIGHT);
+    console.log('Language selected: Kinyarwanda');
+    return MESSAGES.kinyarwanda.ENTER_WEIGHT;
+  } else if (input === '0') {
+    // Already at welcome, show welcome again
+    return MESSAGES.french.WELCOME;
+  } else {
+    console.log('Invalid language selection:', input);
+    return MESSAGES.french.INVALID;
   }
+}
 
-  // Third level: Height input or back
-  if (input.length === 3) {
-    const lang = session.language;
-    const prevChoice = input[1];
-    const choice = input[2];
-
-    if (prevChoice === '0') {
-      // Handle back from weight input, treat choice as language selection
-      if (choice === '0') {
-        console.log('Going back to welcome screen from language selection after back');
-        session.state = 'welcome';
-        session.language = 'french';
-        session.weight = null;
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 2;
-        return MESSAGES.french.WELCOME;
-      }
-      if (choice === '1') {
-        session.language = 'french';
-        session.state = 'weight';
-        session.lastInputLevel = 2;
-        console.log('Language selected after back: French');
-        return MESSAGES.french.ENTER_WEIGHT;
-      } else if (choice === '2') {
-        session.language = 'kinyarwanda';
-        session.state = 'weight';
-        session.lastInputLevel = 2;
-        console.log('Language selected after back: Kinyarwanda');
-        return MESSAGES.kinyarwanda.ENTER_WEIGHT;
-      } else {
-        console.log('Invalid language selection after back:', choice);
-        return MESSAGES.french.INVALID;
-      }
-    }
-
-    if (choice === '0') {
-      console.log('Going back to weight input from height input');
-      session.state = 'weight';
-      session.height = null;
-      session.bmi = null;
-      session.category = null;
-      session.lastInputLevel = 2;
-      return MESSAGES[lang].ENTER_WEIGHT;
-    }
-
-    if (!isNaN(choice) && Number(choice) > 0) {
-      session.height = parseFloat(choice);
-      // Calculate BMI
-      const heightM = session.height / 100;
-      const bmi = (session.weight / (heightM * heightM)).toFixed(1);
-      // Determine category
-      let category, categoryTranslated;
-      if (bmi < 18.5) {
-        category = 'underweight';
-        categoryTranslated = lang === 'kinyarwanda' ? 'Ibiro bike' : 'Insuffisance pondérale';
-      } else if (bmi >= 18.5 && bmi < 25) {
-        category = 'normal';
-        categoryTranslated = lang === 'kinyarwanda' ? 'Bisanzwe' : 'Normal';
-      } else if (bmi >= 25 && bmi < 30) {
-        category = 'overweight';
-        categoryTranslated = lang === 'kinyarwanda' ? 'Ibiro byinshi' : 'Surpoids';
-      } else {
-        category = 'obese';
-        categoryTranslated = lang === 'kinyarwanda' ? 'Umunani' : 'Obésité';
-      }
-      session.bmi = bmi;
-      session.category = category;
-      session.state = 'result';
-      session.lastInputLevel = 3;
-      console.log('Height entered:', session.height, 'BMI:', bmi, 'Category:', category);
-      return MESSAGES[lang].BMI_RESULT.replace('%s', bmi).replace('%s', categoryTranslated);
-    } else {
-      console.log('Invalid height input:', choice);
-      return MESSAGES[lang].INVALID;
-    }
+function handleWeightState(session, input) {
+  const lang = session.language;
+  
+  if (input === '0') {
+    goBack(session);
+    console.log('Going back from weight input');
+    return MESSAGES.french.WELCOME;
   }
-
-  // Fourth level: Health tips, back from result, or inputs after back
-  if (input.length === 4) {
-    const lang = session.language;
-    const prevPrevChoice = input[1]; // Weight or back
-    const prevChoice = input[2]; // Height or language
-    const choice = input[3];
-
-    // Handle inputs when state is welcome (after multiple backs)
-    if (session.state === 'welcome') {
-      if (choice === '0') {
-        console.log('Going back to welcome screen (already there)');
-        session.language = 'french';
-        session.weight = null;
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 3;
-        return MESSAGES.french.WELCOME;
-      }
-      if (choice === '1') {
-        session.language = 'french';
-        session.state = 'weight';
-        session.lastInputLevel = 3;
-        console.log('Language selected after multiple backs: French');
-        return MESSAGES.french.ENTER_WEIGHT;
-      } else if (choice === '2') {
-        session.language = 'kinyarwanda';
-        session.state = 'weight';
-        session.lastInputLevel = 3;
-        console.log('Language selected after multiple backs: Kinyarwanda');
-        return MESSAGES.kinyarwanda.ENTER_WEIGHT;
-      } else {
-        console.log('Invalid language selection after multiple backs:', choice);
-        return MESSAGES.french.INVALID;
-      }
-    }
-
-    // Handle inputs when state is weight (after back from height)
-    if (session.state === 'weight') {
-      if (choice === '0') {
-        console.log('Going back to welcome screen from weight input');
-        session.state = 'welcome';
-        session.language = 'french';
-        session.weight = null;
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 3;
-        return MESSAGES.french.WELCOME;
-      }
-      if (!isNaN(choice) && Number(choice) > 0) {
-        session.weight = parseFloat(choice);
-        session.state = 'height';
-        session.lastInputLevel = 3;
-        console.log('Weight re-entered after back:', session.weight);
-        return MESSAGES[lang].ENTER_HEIGHT;
-      } else {
-        console.log('Invalid weight input after back:', choice);
-        return MESSAGES[lang].INVALID;
-      }
-    }
-
-    // Handle back from weight input (prevPrevChoice === '0')
-    if (prevPrevChoice === '0') {
-      // prevChoice is language, choice is weight or back
-      if (prevChoice === '1' || prevChoice === '2') {
-        const newLang = prevChoice === '1' ? 'french' : 'kinyarwanda';
-        if (choice === '0') {
-          console.log('Going back to welcome screen from weight input after back');
-          session.state = 'welcome';
-          session.language = 'french';
-          session.weight = null;
-          session.height = null;
-          session.bmi = null;
-          session.category = null;
-          session.lastInputLevel = 3;
-          return MESSAGES.french.WELCOME;
-        }
-        if (!isNaN(choice) && Number(choice) > 0) {
-          session.language = newLang;
-          session.weight = parseFloat(choice);
-          session.state = 'height';
-          session.lastInputLevel = 3;
-          console.log('Weight entered after back:', session.weight, 'Language:', newLang);
-          return MESSAGES[newLang].ENTER_HEIGHT;
-        } else {
-          console.log('Invalid weight input after back:', choice);
-          return MESSAGES[newLang].INVALID;
-        }
-      }
-    }
-
-    // Handle back from height input
-    if (prevChoice === '0') {
-      if (choice === '0') {
-        console.log('Going back to welcome screen from weight input after back from height');
-        session.state = 'welcome';
-        session.language = 'french';
-        session.weight = null;
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 3;
-        return MESSAGES.french.WELCOME;
-      }
-      if (!isNaN(choice) && Number(choice) > 0) {
-        session.weight = parseFloat(choice);
-        session.state = 'height';
-        session.lastInputLevel = 3;
-        console.log('Weight re-entered after back:', session.weight);
-        return MESSAGES[lang].ENTER_HEIGHT;
-      } else {
-        console.log('Invalid weight input after back from height:', choice);
-        return MESSAGES[lang].INVALID;
-      }
-    }
-
-    // Handle result screen choices
-    if (session.state === 'result') {
-      if (choice === '0') {
-        console.log('Going back to height input from result screen');
-        session.state = 'height';
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 3;
-        return MESSAGES[lang].ENTER_HEIGHT;
-      }
-      if (choice === '1') {
-        session.state = 'tips';
-        session.lastInputLevel = 4;
-        console.log('Displaying health tips for category:', session.category);
-        return MESSAGES[lang].HEALTH_TIPS[session.category];
-      } else {
-        console.log('Invalid choice on result screen:', choice);
-        return MESSAGES[lang].INVALID_CHOICE;
-      }
-    }
+  
+  const weight = parseFloat(input);
+  if (!isNaN(weight) && weight > 0 && weight <= 1000) {
+    session.weight = weight;
+    navigateToState(session, STATES.HEIGHT);
+    console.log('Weight entered:', weight);
+    return MESSAGES[lang].ENTER_HEIGHT;
+  } else {
+    console.log('Invalid weight input:', input);
+    return MESSAGES[lang].INVALID;
   }
+}
 
-  // Fifth level: Health tips, height input, or language selection after backs
-  if (input.length === 5) {
-    const lang = session.language;
-    const prevPrevPrevChoice = input[1]; // Weight or back
-    const prevPrevChoice = input[2]; // Height or language
-    const prevChoice = input[3]; // Result screen choice or back
-    const choice = input[4];
-
-    // Handle inputs when state is welcome
-    if (session.state === 'welcome') {
-      if (choice === '0') {
-        console.log('Going back to welcome screen (already there)');
-        session.language = 'french';
-        session.weight = null;
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 4;
-        return MESSAGES.french.WELCOME;
-      }
-      if (choice === '1') {
-        session.language = 'french';
-        session.state = 'weight';
-        session.lastInputLevel = 4;
-        console.log('Language selected after multiple backs: French');
-        return MESSAGES.french.ENTER_WEIGHT;
-      } else if (choice === '2') {
-        session.language = 'kinyarwanda';
-        session.state = 'weight';
-        session.lastInputLevel = 4;
-        console.log('Language selected after multiple backs: Kinyarwanda');
-        return MESSAGES.kinyarwanda.ENTER_WEIGHT;
-      } else {
-        console.log('Invalid language selection after multiple backs:', choice);
-        return MESSAGES.french.INVALID;
-      }
-    }
-
-    // Handle inputs when state is weight
-    if (session.state === 'weight') {
-      if (choice === '0') {
-        console.log('Going back to welcome screen from weight input');
-        session.state = 'welcome';
-        session.language = 'french';
-        session.weight = null;
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 4;
-        return MESSAGES.french.WELCOME;
-      }
-      if (!isNaN(choice) && Number(choice) > 0) {
-        session.weight = parseFloat(choice);
-        session.state = 'height';
-        session.lastInputLevel = 4;
-        console.log('Weight re-entered after back:', session.weight);
-        return MESSAGES[lang].ENTER_HEIGHT;
-      } else {
-        console.log('Invalid weight input after back:', choice);
-        return MESSAGES[lang].INVALID;
-      }
-    }
-
-    // Handle inputs when state is height
-    if (session.state === 'height') {
-      if (choice === '0') {
-        console.log('Going back to weight input from height input');
-        session.state = 'weight';
-        session.height = null;
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 4;
-        return MESSAGES[lang].ENTER_WEIGHT;
-      }
-      if (!isNaN(choice) && Number(choice) > 0) {
-        session.height = parseFloat(choice);
-        // Calculate BMI
-        const heightM = session.height / 100;
-        const bmi = (session.weight / (heightM * heightM)).toFixed(1);
-        // Determine category
-        let category, categoryTranslated;
-        if (bmi < 18.5) {
-          category = 'underweight';
-          categoryTranslated = lang === 'kinyarwanda' ? 'Ibiro bike' : 'Insuffisance pondérale';
-        } else if (bmi >= 18.5 && bmi < 25) {
-          category = 'normal';
-          categoryTranslated = lang === 'kinyarwanda' ? 'Bisanzwe' : 'Normal';
-        } else if (bmi >= 25 && bmi < 30) {
-          category = 'overweight';
-          categoryTranslated = lang === 'kinyarwanda' ? 'Ibiro byinshi' : 'Surpoids';
-        } else {
-          category = 'obese';
-          categoryTranslated = lang === 'kinyarwanda' ? 'Umunani' : 'Obésité';
-        }
-        session.bmi = bmi;
-        session.category = category;
-        session.state = 'result';
-        session.lastInputLevel = 4;
-        console.log('Height entered:', session.height, 'BMI:', bmi, 'Category:', category);
-        return MESSAGES[lang].BMI_RESULT.replace('%s', bmi).replace('%s', categoryTranslated);
-      } else {
-        console.log('Invalid height input:', choice);
-        return MESSAGES[lang].INVALID;
-      }
-    }
-
-    // Handle inputs when state is result
-    if (session.state === 'result') {
-      if (choice === '0') {
-        console.log('Going back to height input from result screen');
-        session.state = 'height';
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 4;
-        return MESSAGES[lang].ENTER_HEIGHT;
-      }
-      if (choice === '1') {
-        session.state = 'tips';
-        session.lastInputLevel = 4;
-        console.log('Displaying health tips for category:', session.category);
-        return MESSAGES[lang].HEALTH_TIPS[session.category];
-      } else {
-        console.log('Invalid choice on result screen:', choice);
-        return MESSAGES[lang].INVALID_CHOICE;
-      }
-    }
-
-    // Handle inputs when state is tips
-    if (session.state === 'tips') {
-      if (choice === '0') {
-        console.log('Going back to result screen from tips');
-        session.state = 'result';
-        session.lastInputLevel = 4;
-        return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', lang === 'kinyarwanda' ? 
-          (session.category === 'underweight' ? 'Ibiro bike' : session.category === 'normal' ? 'Bisanzwe' : session.category === 'overweight' ? 'Ibiro byinshi' : 'Umunani') :
-          (session.category === 'underweight' ? 'Insuffisance pondérale' : session.category === 'normal' ? 'Normal' : session.category === 'overweight' ? 'Surpoids' : 'Obésité'));
-      } else {
-        console.log('Invalid choice on tips screen:', choice);
-        return MESSAGES[lang].INVALID_CHOICE;
-      }
-    }
-
-    // Handle back from weight input
-    if (prevPrevPrevChoice === '0') {
-      const newLang = prevPrevChoice === '1' ? 'french' : 'kinyarwanda';
-      if (prevChoice === '0') {
-        // Back from weight input after language selection
-        if (choice === '0') {
-          console.log('Going back to welcome screen from weight input after multiple backs');
-          session.state = 'welcome';
-          session.language = 'french';
-          session.weight = null;
-          session.height = null;
-          session.bmi = null;
-          session.category = null;
-          session.lastInputLevel = 4;
-          return MESSAGES.french.WELCOME;
-        }
-        if (!isNaN(choice) && Number(choice) > 0) {
-          session.language = newLang;
-          session.weight = parseFloat(choice);
-          session.state = 'height';
-          session.lastInputLevel = 4;
-          console.log('Weight entered after multiple backs:', session.weight);
-          return MESSAGES[newLang].ENTER_HEIGHT;
-        } else {
-          console.log('Invalid weight input after multiple backs:', choice);
-          return MESSAGES[newLang].INVALID;
-        }
-      }
-    }
-
-    // Handle back from height input
-    if (prevPrevChoice === '0') {
-      if (prevChoice === '0') {
-        if (choice === '0') {
-          console.log('Going back to welcome screen from weight input after back from height');
-          session.state = 'welcome';
-          session.language = 'french';
-          session.weight = null;
-          session.height = null;
-          session.bmi = null;
-          session.category = null;
-          session.lastInputLevel = 4;
-          return MESSAGES.french.WELCOME;
-        }
-        if (!isNaN(choice) && Number(choice) > 0) {
-          session.weight = parseFloat(choice);
-          session.state = 'height';
-          session.lastInputLevel = 4;
-          console.log('Weight re-entered after back from height:', session.weight);
-          return MESSAGES[lang].ENTER_HEIGHT;
-        } else {
-          console.log('Invalid weight input after back from height:', choice);
-          return MESSAGES[lang].INVALID;
-        }
-      }
-    }
-
-    // Handle back from result screen
-    if (prevChoice === '0') {
-      if (choice === '0') {
-        console.log('Going back to height input from result screen after back');
-        session.state = 'height';
-        session.bmi = null;
-        session.category = null;
-        session.lastInputLevel = 4;
-        return MESSAGES[lang].ENTER_HEIGHT;
-      } else {
-        console.log('Invalid choice after back from result screen:', choice);
-        return MESSAGES[lang].INVALID_CHOICE;
-      }
-    }
+function handleHeightState(session, input) {
+  const lang = session.language;
+  
+  if (input === '0') {
+    goBack(session);
+    console.log('Going back from height input');
+    return MESSAGES[lang].ENTER_WEIGHT;
   }
+  
+  const height = parseFloat(input);
+  if (!isNaN(height) && height > 0 && height <= 300) {
+    session.height = height;
+    
+    // Calculate BMI
+    const { bmi, category } = calculateBMI(session.weight, session.height);
+    session.bmi = bmi;
+    session.category = category;
+    
+    navigateToState(session, STATES.RESULT);
+    console.log('Height entered:', height, 'BMI:', bmi, 'Category:', category);
+    
+    const categoryTranslated = getCategoryTranslation(category, lang);
+    return MESSAGES[lang].BMI_RESULT.replace('%s', bmi).replace('%s', categoryTranslated);
+  } else {
+    console.log('Invalid height input:', input);
+    return MESSAGES[lang].INVALID;
+  }
+}
 
-  console.log('Invalid input length:', input.length);
-  return MESSAGES.french.INVALID;
+function handleResultState(session, input) {
+  const lang = session.language;
+  
+  if (input === '0') {
+    goBack(session);
+    console.log('Going back from result screen');
+    return MESSAGES[lang].ENTER_HEIGHT;
+  } else if (input === '1') {
+    navigateToState(session, STATES.TIPS);
+    console.log('Displaying health tips for category:', session.category);
+    return MESSAGES[lang].HEALTH_TIPS[session.category];
+  } else {
+    console.log('Invalid choice on result screen:', input);
+    return MESSAGES[lang].INVALID_CHOICE;
+  }
+}
+
+function handleTipsState(session, input) {
+  const lang = session.language;
+  
+  if (input === '0') {
+    goBack(session);
+    console.log('Going back from tips screen');
+    const categoryTranslated = getCategoryTranslation(session.category, lang);
+    return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
+  } else {
+    console.log('Invalid choice on tips screen:', input);
+    return MESSAGES[lang].INVALID_CHOICE;
+  }
 }
 
 const PORT = process.env.PORT || 10000;
