@@ -145,37 +145,41 @@ async function cleanupOldSessions() {
 const MESSAGES = {
   french: {
     WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
-    ENTER_AGE: "CON Entrez votre âge (ex., 25) :\n0. Retour\n\nChoisissez un numéro :",
-    ENTER_WEIGHT: "CON Entrez votre poids en kilogrammes (ex., 70) :\n0. Retour\n\nChoisissez un numéro :",
-    ENTER_HEIGHT: "CON Entrez votre taille en centimètres (ex., 170) :\n0. Retour\n\nChoisissez un numéro :",
-    BMI_RESULT: "CON Votre IMC est %s\nCatégorie : %s\n1. Conseils de santé\n2. Voir historique\n0. Retour\n\nChoisissez un numéro :",
+    ENTER_AGE: "CON Entrez votre âge (ex., 25) :\n0. Retour au menu principal\n00. Quitter\n\nChoisissez un numéro :",
+    ENTER_WEIGHT: "CON Entrez votre poids en kilogrammes (ex., 70) :\n0. Retour\n00. Quitter\n\nChoisissez un numéro :",
+    ENTER_HEIGHT: "CON Entrez votre taille en centimètres (ex., 170) :\n0. Retour\n00. Quitter\n\nChoisissez un numéro :",
+    BMI_RESULT: "CON Votre IMC est %s\nCatégorie : %s\n1. Conseils de santé\n2. Voir historique\n0. Nouveau calcul\n00. Quitter\n\nChoisissez un numéro :",
     HEALTH_TIPS: {
-      underweight: "CON Conseils : Mangez des aliments riches en nutriments, augmentez l'apport calorique, consultez un diététicien.\n0. Retour\n\nChoisissez un numéro :",
-      normal: "CON Conseils : Maintenez une alimentation équilibrée, faites de l'exercice régulièrement, restez hydraté.\n0. Retour\n\nChoisissez un numéro :",
-      overweight: "CON Conseils : Réduisez l'apport calorique, augmentez l'activité physique, consultez un médecin.\n0. Retour\n\nChoisissez un numéro :",
-      obese: "CON Conseils : Consultez un médecin, adoptez une alimentation saine, faites de l'exercice sous supervision.\n0. Retour\n\nChoisissez un numéro :"
+      underweight: "CON Conseils : Mangez des aliments riches en nutriments, augmentez l'apport calorique, consultez un diététicien.\n0. Retour\n00. Quitter\n\nChoisissez un numéro :",
+      normal: "CON Conseils : Maintenez une alimentation équilibrée, faites de l'exercice régulièrement, restez hydraté.\n0. Retour\n00. Quitter\n\nChoisissez un numéro :",
+      overweight: "CON Conseils : Réduisez l'apport calorique, augmentez l'activité physique, consultez un médecin.\n0. Retour\n00. Quitter\n\nChoisissez un numéro :",
+      obese: "CON Conseils : Consultez un médecin, adoptez une alimentation saine, faites de l'exercice sous supervision.\n0. Retour\n00. Quitter\n\nChoisissez un numéro :"
     },
     INVALID: "END Entrée invalide. Veuillez réessayer.",
     INVALID_CHOICE: "END Choix invalide. Veuillez réessayer.",
     ERROR: "END Le système est en maintenance. Veuillez réessayer plus tard.",
-    HISTORY: "CON Historique de vos 3 derniers calculs IMC :\n%s\n0. Retour\n\nChoisissez un numéro :"
+    HISTORY: "CON Historique de vos 3 derniers calculs IMC :\n%s\n0. Retour\n00. Quitter\n\nChoisissez un numéro :",
+    GOODBYE: "END Merci d'avoir utilisé la Calculatrice IMC. À bientôt!",
+    SESSION_ENDED: "END Session terminée. Merci!"
   },
   kinyarwanda: {
     WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
-    ENTER_AGE: "CON Injiza imyaka yawe (urugero, 25) :\n0. Subira inyuma\n\nHitamo nimero :",
-    ENTER_WEIGHT: "CON Injiza ibiro byawe muri kilogarama (urugero, 70) :\n0. Subira inyuma\n\nHitamo nimero :",
-    ENTER_HEIGHT: "CON Injiza uburebure bwawe muri santimetero (urugero, 170) :\n0. Subira inyuma\n\nHitamo nimero :",
-    BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n2. Reba amateka\n0. Subira inyuma\n\nHitamo nimero :",
+    ENTER_AGE: "CON Injiza imyaka yawe (urugero, 25) :\n0. Subira ku menu\n00. Sohoka\n\nHitamo nimero :",
+    ENTER_WEIGHT: "CON Injiza ibiro byawe muri kilogarama (urugero, 70) :\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :",
+    ENTER_HEIGHT: "CON Injiza uburebure bwawe muri santimetero (urugero, 170) :\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :",
+    BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n2. Reba amateka\n0. Kubara ubundi\n00. Sohoka\n\nHitamo nimero :",
     HEALTH_TIPS: {
-      underweight: "CON Inama : Fata ibiryo biryoshye, ongeramo kalori, wasanga umuganga w'imirire.\n0. Subira inyuma\n\nHitamo nimero :",
-      normal: "CON Inama : Komeza kurya ibiryo biringanije, korikora imyirambere, unywe amazi ahagije.\n0. Subira inyuma\n\nHitamo nimero :",
-      overweight: "CON Inama : Gukuramo kalori, ongeramo imyirambere, wasanga umuganga.\n0. Subira inyuma\n\nHitamo nimero :",
-      obese: "CON Inama : Sura umuganga, tangira kurya ibiryo by'ubuzima, korikora imyirambere ufashijwe.\n0. Subira inyuma\n\nHitamo nimero :"
+      underweight: "CON Inama : Fata ibiryo biryoshye, ongeramo kalori, wasanga umuganga w'imirire.\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :",
+      normal: "CON Inama : Komeza kurya ibiryo biringanije, korikora imyirambere, unywe amazi ahagije.\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :",
+      overweight: "CON Inama : Gukuramo kalori, ongeramo imyirambere, wasanga umuganga.\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :",
+      obese: "CON Inama : Sura umuganga, tangira kurya ibiryo by'ubuzima, korikora imyirambere ufashijwe.\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :"
     },
     INVALID: "END Injiza nabi. Ongera ugerageze.",
     INVALID_CHOICE: "END Guhitamo nabi. Ongera ugerageze.",
     ERROR: "END Sisitemu iri mu bikorwa byo kuyisana. Ongera ugerageze nyuma.",
-    HISTORY: "CON Amateka ya BMI yawe y'ibyashize 3 :\n%s\n0. Subira inyuma\n\nHitamo nimero :"
+    HISTORY: "CON Amateka ya BMI yawe y'ibyashize 3 :\n%s\n0. Subira inyuma\n00. Sohoka\n\nHitamo nimero :",
+    GOODBYE: "END Murakoze gukoresha BMI Calculator. Turabonana!",
+    SESSION_ENDED: "END Igihe kirangiye. Murakoze!"
   }
 };
 
@@ -188,6 +192,14 @@ const STATES = {
   RESULT: 'result',
   TIPS: 'tips',
   HISTORY: 'history'
+};
+
+// Session status constants
+const SESSION_STATUS = {
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  TERMINATED: 'terminated',
+  EXPIRED: 'expired'
 };
 
 // In-memory session storage (for temporary data during session)
@@ -300,6 +312,17 @@ function navigateToState(session, newState) {
   session.navigationStack.push(newState);
 }
 
+function resetToWelcome(session) {
+  session.state = STATES.WELCOME;
+  session.navigationStack = [STATES.WELCOME];
+  session.language = 'french';
+  session.age = null;
+  session.weight = null;
+  session.height = null;
+  session.bmi = null;
+  session.category = null;
+}
+
 function calculateBMI(weight, height) {
   const heightM = height / 100;
   const bmi = (weight / (heightM * heightM)).toFixed(1);
@@ -369,9 +392,6 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
     cleanupMemorySessions();
     await cleanupOldSessions();
     
-    // Update session in database
-    await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language);
-    
     // Parse input - extract only numeric choices
     const inputParts = text.split('*');
     const lastInput = inputParts[inputParts.length - 1];
@@ -382,8 +402,16 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
     if (!text || text === '') {
       session.state = STATES.WELCOME;
       session.navigationStack = [STATES.WELCOME];
-      await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language);
+      await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
       return MESSAGES.french.WELCOME;
+    }
+    
+    // Global exit handler - check for "00" in any state
+    if (lastInput === '00') {
+      // Mark session as terminated
+      await updateSessionStatus(sessionId, SESSION_STATUS.TERMINATED);
+      console.log(`Session ${sessionId} terminated by user`);
+      return MESSAGES[session.language].GOODBYE;
     }
     
     // Route based on current state
@@ -413,11 +441,13 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
         // Reset to welcome if unknown state
         session.state = STATES.WELCOME;
         session.navigationStack = [STATES.WELCOME];
-        await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language);
+        await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
         return MESSAGES.french.WELCOME;
     }
   } catch (error) {
     console.error('Error in processUSSDFlow:', error);
+    // Mark session as terminated due to error
+    await updateSessionStatus(sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES.french.ERROR;
   }
 }
@@ -426,13 +456,13 @@ async function handleWelcomeState(session, input) {
   if (input === '1') {
     session.language = 'french';
     navigateToState(session, STATES.AGE);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Language selected: French');
     return MESSAGES.french.ENTER_AGE;
   } else if (input === '2') {
     session.language = 'kinyarwanda';
     navigateToState(session, STATES.AGE);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Language selected: Kinyarwanda');
     return MESSAGES.kinyarwanda.ENTER_AGE;
   } else if (input === '0') {
@@ -440,7 +470,7 @@ async function handleWelcomeState(session, input) {
     return MESSAGES.french.WELCOME;
   } else {
     console.log('Invalid language selection:', input);
-    await updateSessionStatus(session.sessionId, 'completed');
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES.french.INVALID;
   }
 }
@@ -449,9 +479,9 @@ async function handleAgeState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
-    console.log('Going back from age input');
+    resetToWelcome(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
+    console.log('Going back to main menu from age input');
     return MESSAGES.french.WELCOME;
   }
   
@@ -459,11 +489,12 @@ async function handleAgeState(session, input) {
   if (!isNaN(age) && age > 0 && age <= 120) {
     session.age = age;
     navigateToState(session, STATES.WEIGHT);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Age entered:', age);
     return MESSAGES[lang].ENTER_WEIGHT;
   } else {
     console.log('Invalid age input:', input);
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES[lang].INVALID;
   }
 }
@@ -473,7 +504,7 @@ async function handleWeightState(session, input) {
   
   if (input === '0') {
     goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from weight input');
     return MESSAGES[lang].ENTER_AGE;
   }
@@ -482,11 +513,12 @@ async function handleWeightState(session, input) {
   if (!isNaN(weight) && weight > 0 && weight <= 1000) {
     session.weight = weight;
     navigateToState(session, STATES.HEIGHT);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Weight entered:', weight);
     return MESSAGES[lang].ENTER_HEIGHT;
   } else {
     console.log('Invalid weight input:', input);
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES[lang].INVALID;
   }
 }
@@ -496,7 +528,7 @@ async function handleHeightState(session, input) {
   
   if (input === '0') {
     goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from height input');
     return MESSAGES[lang].ENTER_WEIGHT;
   }
@@ -522,13 +554,14 @@ async function handleHeightState(session, input) {
     );
     
     navigateToState(session, STATES.RESULT);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Height entered:', height, 'BMI:', bmi, 'Category:', category);
     
     const categoryTranslated = getCategoryTranslation(category, lang);
     return MESSAGES[lang].BMI_RESULT.replace('%s', bmi).replace('%s', categoryTranslated);
   } else {
     console.log('Invalid height input:', input);
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES[lang].INVALID;
   }
 }
@@ -537,18 +570,25 @@ async function handleResultState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
-    console.log('Going back from result screen');
-    return MESSAGES[lang].ENTER_HEIGHT;
+    // New calculation - reset to age input
+    session.age = null;
+    session.weight = null;
+    session.height = null;
+    session.bmi = null;
+    session.category = null;
+    session.state = STATES.AGE;
+    session.navigationStack = [STATES.WELCOME, STATES.AGE];
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
+    console.log('Starting new calculation');
+    return MESSAGES[lang].ENTER_AGE;
   } else if (input === '1') {
     navigateToState(session, STATES.TIPS);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Displaying health tips for category:', session.category);
     return MESSAGES[lang].HEALTH_TIPS[session.category];
   } else if (input === '2') {
     navigateToState(session, STATES.HISTORY);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Displaying BMI history');
     
     const history = await getBMIHistory(session.phoneNumber);
@@ -567,6 +607,7 @@ async function handleResultState(session, input) {
     return MESSAGES[lang].HISTORY.replace('%s', historyText);
   } else {
     console.log('Invalid choice on result screen:', input);
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
@@ -576,12 +617,13 @@ async function handleTipsState(session, input) {
   
   if (input === '0') {
     goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from tips screen');
     const categoryTranslated = getCategoryTranslation(session.category, lang);
     return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
   } else {
     console.log('Invalid choice on tips screen:', input);
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
@@ -591,12 +633,13 @@ async function handleHistoryState(session, input) {
   
   if (input === '0') {
     goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from history screen');
     const categoryTranslated = getCategoryTranslation(session.category, lang);
     return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
   } else {
     console.log('Invalid choice on history screen:', input);
+    await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
