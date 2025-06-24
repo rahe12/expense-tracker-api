@@ -49,30 +49,31 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const parsedBody = querystring.parse(body);
-        const text = (parsedBody.text || "").trim();
+        const text = (parsedBody.text || '').trim();
         const sessionId = parsedBody.sessionId || Date.now().toString();
         const phoneNumber = parsedBody.phoneNumber || 'unknown';
-        const input = text.split("*").filter(segment => segment.match(/^[0-9]+$/));
+        const input = text.split('*').filter(segment => segment.match(/^\d+$/));
 
-        console.log('Received text:', text, 'Parsed input:', input, 'Session ID:', sessionId);
+        console.log('Received text:', input, 'Session ID:', sessionId);
 
-        let response = processUSSDFlow(input, sessionId, phoneNumber);
+        let response = processUSSDFlow(input, sessionId);
 
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end(response);
       } catch (error) {
         console.error('Unhandled system error:', error);
         res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end(MESSAGES.french.ERROR);
+        return res.end(MESSAGES.french.ERROR);
       }
     });
   } else {
     res.writeHead(200);
-    res.end("USSD BMI Calculator service running.");
+    res.end('USSD BMI Calculator service running.');
+    return res.end('');
   }
 });
 
-function processUSSDFlow(input, sessionId, phoneNumber) {
+function processUSSDFlow(input, sessionId) {
   // Initialize session if not exists
   if (!sessions[sessionId]) {
     sessions[sessionId] = {
@@ -108,15 +109,15 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
   // First level: Language selection
   if (input.length === 1) {
     const choice = input[0];
-    if (choice === "1") {
-      session.language = "french";
-      session.state = "weight";
+    if (choice === '1') {
+      session.language = 'french';
+      session.state = 'weight';
       session.lastInputLevel = 1;
       console.log('Language selected: French');
       return MESSAGES.french.ENTER_WEIGHT;
-    } else if (choice === "2") {
-      session.language = "kinyarwanda";
-      session.state = "weight";
+    } else if (choice === '2') {
+      session.language = 'kinyarwanda';
+      session.state = 'weight';
       session.lastInputLevel = 1;
       console.log('Language selected: Kinyarwanda');
       return MESSAGES.kinyarwanda.ENTER_WEIGHT;
@@ -131,7 +132,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
     const lang = session.language;
     const choice = input[1];
 
-    if (choice === "0") {
+    if (choice === '0') {
       console.log('Going back to welcome screen from weight input');
       session.state = 'welcome';
       session.lastInputLevel = 1;
@@ -156,17 +157,17 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
     const prevChoice = input[1];
     const choice = input[2];
 
-    if (prevChoice === "0") {
+    if (prevChoice === '0') {
       // Handle back from weight input, treat choice as language selection
-      if (choice === "1") {
-        session.language = "french";
-        session.state = "weight";
+      if (choice === '1') {
+        session.language = 'french';
+        session.state = 'weight';
         session.lastInputLevel = 2;
         console.log('Language selected after back: French');
         return MESSAGES.french.ENTER_WEIGHT;
-      } else if (choice === "2") {
-        session.language = "kinyarwanda";
-        session.state = "weight";
+      } else if (choice === '2') {
+        session.language = 'kinyarwanda';
+        session.state = 'weight';
         session.lastInputLevel = 2;
         console.log('Language selected after back: Kinyarwanda');
         return MESSAGES.kinyarwanda.ENTER_WEIGHT;
@@ -176,7 +177,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
       }
     }
 
-    if (choice === "0") {
+    if (choice === '0') {
       console.log('Going back to weight input from height input');
       session.state = 'weight';
       session.lastInputLevel = 2;
@@ -222,8 +223,8 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
     const prevChoice = input[2]; // Height or language
     const choice = input[3];
 
-    // Handle back from weight input (prevPrevChoice === "0")
-    if (prevPrevChoice === "0') {
+    // Handle back from weight input
+    if (prevPrevChoice === "0") {
       // prevChoice is language, choice is weight or back
       if (prevChoice === "1" || prevChoice === "2") {
         const newLang = prevChoice === "1" ? "french" : "kinyarwanda";
@@ -245,8 +246,10 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
           return MESSAGES[newLang].INVALID;
         }
       }
+    }
+
     // Handle back from height input
-    } else if (prevChoice === "0") {
+    if (prevChoice === "0") {
       if (choice === "0") {
         console.log('Going back to welcome screen from weight input after back from height');
         session.state = 'welcome';
@@ -293,7 +296,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
     const choice = input[4];
 
     // Handle back from weight input
-    if (prevPrevChoice === "0") {
+    if (prevPrevPrevChoice === "0") {
       const newLang = prevPrevChoice === "1" ? "french" : "kinyarwanda";
       if (prevChoice === "0") {
         // Back from weight input after language selection
@@ -301,14 +304,14 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
           console.log('Going back to welcome screen from weight input after multiple backs');
           session.state = 'welcome';
           session.lastInputLevel = 4;
-          return MESSAGES[lang].WELCOME;
+          return MESSAGES.french.WELCOME;
         }
         if (!isNaN(choice) && Number(choice) > 0) {
           session.language = newLang;
           session.weight = parseFloat(choice);
           session.state = 'height';
           session.lastInputLevel = 4;
-          console.log('Weight re-entered after multiple backs');
+          console.log('Weight entered after multiple backs:', session.weight);
           return MESSAGES[newLang].ENTER_HEIGHT;
         } else {
           console.log('Invalid weight input after multiple backs:', choice);
@@ -324,7 +327,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
           console.log('Going back to welcome screen from weight input after back from height');
           session.state = 'welcome';
           session.lastInputLevel = 4;
-          return MESSAGES[lang].WELCOME;
+          return MESSAGES.french.WELCOME;
         }
         if (!isNaN(choice) && Number(choice) > 0) {
           session.weight = parseFloat(choice);
