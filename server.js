@@ -228,7 +228,6 @@ const server = http.createServer((req, res) => {
       }
     });
   } else if (req.method === 'GET' && req.url === '/shutdown') {
-    // Endpoint to gracefully shutdown the server
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Shutting down server...');
     console.log('Received shutdown request');
@@ -273,17 +272,17 @@ function cleanupMemorySessions() {
 }
 
 function goBack(session) {
-  // Remove current state from stack
+  // Ensure stack has at least two states to go back
   if (session.navigationStack.length > 1) {
     session.navigationStack.pop();
     session.state = session.navigationStack[session.navigationStack.length - 1];
   } else {
-    // If no previous state, go to welcome
+    // If at WELCOME or stack is invalid, reset to WELCOME
     session.state = STATES.WELCOME;
     session.navigationStack = [STATES.WELCOME];
   }
   
-  // Clear data based on current state
+  // Clear data based on the new state
   switch (session.state) {
     case STATES.WELCOME:
       session.language = 'french';
@@ -315,12 +314,27 @@ function goBack(session) {
       session.bmi = null;
       session.category = null;
       break;
+    case STATES.TIPS:
+    case STATES.HISTORY:
+      // No additional data to clear
+      break;
   }
+  
+  console.log(`Navigated back to state: ${session.state}, Stack: ${JSON.stringify(session.navigationStack)}`);
 }
 
 function navigateToState(session, newState) {
-  session.state = newState;
-  session.navigationStack.push(newState);
+  // Validate new state
+  if (!Object.values(STATES).includes(newState)) {
+    console.error(`Invalid state transition attempted: ${newState}`);
+    session.state = STATES.WELCOME;
+    session.navigationStack = [STATES.WELCOME];
+  } else {
+    session.state = newState;
+    session.navigationStack.push(newState);
+  }
+  
+  console.log(`Navigated to state: ${session.state}, Stack: ${JSON.stringify(session.navigationStack)}`);
 }
 
 function resetToWelcome(session) {
@@ -332,6 +346,7 @@ function resetToWelcome(session) {
   session.height = null;
   session.bmi = null;
   session.category = null;
+  console.log(`Reset to WELCOME, Stack: ${JSON.stringify(session.navigationStack)}`);
 }
 
 function calculateBMI(weight, height) {
@@ -419,8 +434,8 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
     
     // Global exit handler - check for "00" in any state
     if (lastInput === '00') {
-      // Mark session as terminated
       await updateSessionStatus(sessionId, SESSION_STATUS.TERMINATED);
+      delete sessions[sessionId];
       console.log(`Session ${sessionId} terminated by user`);
       return MESSAGES[session.language].GOODBYE;
     }
@@ -449,22 +464,26 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
         return await handleHistoryState(session, lastInput);
       
       default:
-        // Reset to welcome if unknown state
-        session.state = STATES.WELCOME;
-        session.navigationStack = [STATES.WELCOME];
+        console.error(`Unknown state: ${session.state}`);
+        resetToWelcome(session);
         await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
         return MESSAGES.french.WELCOME;
     }
   } catch (error) {
     console.error('Error in processUSSDFlow:', error);
-    // Mark session as terminated due to error
     await updateSessionStatus(sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[sessionId];
     return MESSAGES.french.ERROR;
   }
 }
 
 async function handleWelcomeState(session, input) {
-  if (input === '1') {
+  if (input === '0') {
+    // Stay at WELCOME
+    console.log('Staying at WELCOME state');
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    return MESSAGES.french.WELCOME;
+  } else if (input === '1') {
     session.language = 'french';
     navigateToState(session, STATES.AGE);
     await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
@@ -476,12 +495,10 @@ async function handleWelcomeState(session, input) {
     await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
     console.log('Language selected: Kinyarwanda');
     return MESSAGES.kinyarwanda.ENTER_AGE;
-  } else if (input === '0') {
-    // Already at welcome, show welcome again
-    return MESSAGES.french.WELCOME;
   } else {
     console.log('Invalid language selection:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES.french.INVALID;
   }
 }
@@ -506,6 +523,7 @@ async function handleAgeState(session, input) {
   } else {
     console.log('Invalid age input:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES[lang].INVALID;
   }
 }
@@ -530,6 +548,7 @@ async function handleWeightState(session, input) {
   } else {
     console.log('Invalid weight input:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES[lang].INVALID;
   }
 }
@@ -573,6 +592,7 @@ async function handleHeightState(session, input) {
   } else {
     console.log('Invalid height input:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES[lang].INVALID;
   }
 }
@@ -587,8 +607,7 @@ async function handleResultState(session, input) {
     session.height = null;
     session.bmi = null;
     session.category = null;
-    session.state = STATES.AGE;
-    session.navigationStack = [STATES.WELCOME, STATES.AGE];
+    navigateToState(session, STATES.AGE);
     await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
     console.log('Starting new calculation');
     return MESSAGES[lang].ENTER_AGE;
@@ -619,6 +638,7 @@ async function handleResultState(session, input) {
   } else {
     console.log('Invalid choice on result screen:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
@@ -635,6 +655,7 @@ async function handleTipsState(session, input) {
   } else {
     console.log('Invalid choice on tips screen:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
@@ -651,6 +672,7 @@ async function handleHistoryState(session, input) {
   } else {
     console.log('Invalid choice on history screen:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
+    delete sessions[session.sessionId];
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
@@ -661,7 +683,7 @@ const PORT = process.env.PORT || 10000;
 initializeDatabase()
   .then(() => {
     server.listen(PORT, () => {
-      console.log(`✅ USSD BMI Calculator app with Neon Database is running on port ${PORT}`);
+      console.log(`✅ USSD BMI Calculator app with Neon database is running on port ${PORT}`);
     });
   })
   .catch((error) => {
@@ -671,13 +693,13 @@ initializeDatabase()
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM, shutting down gracefully...');
+  console.log('Shutting down gracefully...');
   await pool.end();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('Received SIGINT, shutting down gracefully...');
+  console.log('Shutting down gracefully...');
   await pool.end();
   process.exit(0);
 });
