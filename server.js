@@ -4,7 +4,7 @@ const querystring = require('querystring');
 // Constants for messages
 const MESSAGES = {
   french: {
-    WELCOME: "CON Bienvenue à la Calculatrice IMC\nVeuillez sélectionner la langue\n1. Français\n2. Kinyarwanda",
+    WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
     ENTER_WEIGHT: "CON Entrez votre poids en kilogrammes (ex., 70) :\n0. Retour\n\nChoisissez un numéro :",
     ENTER_HEIGHT: "CON Entrez votre taille en centimètres (ex., 170) :\n0. Retour\n\nChoisissez un numéro :",
     BMI_RESULT: "CON Votre IMC est %s\nCatégorie : %s\n1. Conseils de santé\n0. Retour\n\nChoisissez un numéro :",
@@ -21,7 +21,7 @@ const MESSAGES = {
     CHOOSE: "Choisissez un numéro :"
   },
   kinyarwanda: {
-    WELCOME: "CON Murakaza neza kuri BMI Calculator\nHitamo ururimi\n1. Français\n2. Kinyarwanda",
+    WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
     ENTER_WEIGHT: "CON Injiza ibiro byawe muri kilogarama (urugero, 70) :\n0. Subira inyuma\n\nHitamo nimero :",
     ENTER_HEIGHT: "CON Injiza uburebure bwawe muri santimetero (urugero, 170) :\n0. Subira inyuma\n\nHitamo nimero :",
     BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n0. Subira inyuma\n\nHitamo nimero :",
@@ -223,7 +223,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
     const choice = input[3];
 
     // Handle back from weight input (prevPrevChoice === "0")
-    if (prevPrevChoice === "0") {
+    if (prevPrevChoice === "0') {
       // prevChoice is language, choice is weight or back
       if (prevChoice === "1" || prevChoice === "2") {
         const newLang = prevChoice === "1" ? "french" : "kinyarwanda";
@@ -245,10 +245,8 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
           return MESSAGES[newLang].INVALID;
         }
       }
-    }
-
     // Handle back from height input
-    if (prevChoice === "0") {
+    } else if (prevChoice === "0") {
       if (choice === "0") {
         console.log('Going back to welcome screen from weight input after back from height');
         session.state = 'welcome';
@@ -295,7 +293,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
     const choice = input[4];
 
     // Handle back from weight input
-    if (prevPrevPrevChoice === "0") {
+    if (prevPrevChoice === "0") {
       const newLang = prevPrevChoice === "1" ? "french" : "kinyarwanda";
       if (prevChoice === "0") {
         // Back from weight input after language selection
@@ -303,14 +301,14 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
           console.log('Going back to welcome screen from weight input after multiple backs');
           session.state = 'welcome';
           session.lastInputLevel = 4;
-          return MESSAGES.french.WELCOME;
+          return MESSAGES[lang].WELCOME;
         }
         if (!isNaN(choice) && Number(choice) > 0) {
           session.language = newLang;
           session.weight = parseFloat(choice);
           session.state = 'height';
           session.lastInputLevel = 4;
-          console.log('Weight entered after multiple backs:', session.weight);
+          console.log('Weight re-entered after multiple backs');
           return MESSAGES[newLang].ENTER_HEIGHT;
         } else {
           console.log('Invalid weight input after multiple backs:', choice);
@@ -326,7 +324,7 @@ function processUSSDFlow(input, sessionId, phoneNumber) {
           console.log('Going back to welcome screen from weight input after back from height');
           session.state = 'welcome';
           session.lastInputLevel = 4;
-          return MESSAGES.french.WELCOME;
+          return MESSAGES[lang].WELCOME;
         }
         if (!isNaN(choice) && Number(choice) > 0) {
           session.weight = parseFloat(choice);
