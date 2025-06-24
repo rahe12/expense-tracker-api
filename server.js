@@ -24,6 +24,39 @@ const MESSAGES = {
     WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
     ENTER_WEIGHT: "CON Injiza ibiro byawe muri kilogarama (urugero, 70) :\n0. Subira inyuma\n\nHitamo nimero :",
     ENTER_HEIGHT: "CON Injiza uburebure bwawe muri santimetero (urugero, 170) :\n0. Subira inyuma\n\nHitamo nimero :",
+    BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n0. Subira inyuma\n\nHitamo nimero :
+
+System: It looks like your message was cut off, and the artifact code is incomplete. However, based on the logs and your description of the issue with the "back" functionality, I’ve identified the problem in the `processUSSDFlow` function, specifically in the handling of inputs at the fifth level (`input.length === 5`). The issue is that when the user navigates back to the welcome screen (state: 'welcome') and enters a new input (e.g., "1" for French), it’s incorrectly treated as a weight input instead of a language selection. I’ll provide a corrected version of the code, focusing on fixing the back navigation logic in the fifth level while preserving the bilingual welcome message and other functionality.
+
+The key change is in the `input.length === 5` block, where we need to check the session state explicitly. If the state is `welcome`, the input should be treated as a language selection, similar to the `input.length === 1` case. I’ll also ensure the session state is properly reset after multiple back navigations to prevent misinterpretation of inputs. Since this is an update to the existing artifact, I’ll reuse the artifact_id and provide the complete corrected code.
+
+<xaiArtifact artifact_id="2a345c9e-55e8-4dae-8cdd-8ccbe6539aae" artifact_version_id="43307e98-dee9-496b-9b47-4fccbd47c32f" title="bmi_calculator.js" contentType="text/javascript">
+const http = require('http');
+const querystring = require('querystring');
+
+// Constants for messages
+const MESSAGES = {
+  french: {
+    WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
+    ENTER_WEIGHT: "CON Entrez votre poids en kilogrammes (ex., 70) :\n0. Retour\n\nChoisissez un numéro :",
+    ENTER_HEIGHT: "CON Entrez votre taille en centimètres (ex., 170) :\0. Retour\n\nChoisissez un numéro :",
+    BMI_RESULT: "CON Votre IMC est %s\nCatégorie : %s\n1. Conseils de santé\n0. Retour\n\nChoisissez un numéro :",
+    HEALTH_TIPS: {
+      underweight: "CON Conseils : Mangez des aliments riches en nutriments, augmentez l'apport calorique, consultez un diététicien.\n0. Retour\n\nChoisissez un numéro :",
+      normal: "CON Conseils : Maintenez une alimentation équilibrée, faites de l'exercice régulièrement, restez hydraté.\n0. Retour\n\nChoisissez un numéro :",
+      overweight: "CON Conseils : Réduisez l'apport calorique, augmentez l'activité physique, consultez un médecin.\n0. Retour\n\nChoisissez un numéro :",
+      obese: "CON Conseils : Consultez un médecin, adoptez une alimentation saine, faites de l'exercice sous supervision.\n0. Retour\n\nChoisissez un numéro :"
+    },
+    INVALID: "END Entrée invalide. Recomposez pour recommencer.",
+    INVALID_CHOICE: "END Choix invalide. Recomposez pour recommencer.",
+    ERROR: "END Le système est en maintenance. Veuillez réessayer plus tard.",
+    BACK: "Retour",
+    CHOOSE: "Choisissez un numéro :"
+  },
+  kinyarwanda: {
+    WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
+    ENTER_WEIGHT: "CON Injiza ibiro byawe muri kilogarama (urugero, 70) :\n0. Subira inyuma\n\nHitamo nimero :",
+    ENTER_HEIGHT: "CON Injiza uburebure bwawe muri santimetero (urugero, 170) :\n0. Subira inyuma\n\n trendHitamo nimero :",
     BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n0. Subira inyuma\n\nHitamo nimero :",
     HEALTH_TIPS: {
       underweight: "CON Inama : Fata ibiryo biryoshye, ongeramo kalori, wasanga umuganga w'imirire.\n0. Subira inyuma\n\nHitamo nimero :",
@@ -63,13 +96,12 @@ const server = http.createServer((req, res) => {
       } catch (error) {
         console.error('Unhandled system error:', error);
         res.writeHead(200, { 'Content-Type': 'text/plain' });
-        return res.end(MESSAGES.french.ERROR);
+        res.end(MESSAGES.french.ERROR);
       }
     });
   } else {
     res.writeHead(200);
     res.end('USSD BMI Calculator service running.');
-    return res.end('');
   }
 });
 
@@ -224,11 +256,11 @@ function processUSSDFlow(input, sessionId) {
     const choice = input[3];
 
     // Handle back from weight input
-    if (prevPrevChoice === "0") {
+    if (prevPrevChoice === '0') {
       // prevChoice is language, choice is weight or back
-      if (prevChoice === "1" || prevChoice === "2") {
-        const newLang = prevChoice === "1" ? "french" : "kinyarwanda";
-        if (choice === "0") {
+      if (prevChoice === '1' || prevChoice === '2') {
+        const newLang = prevChoice === '1' ? 'french' : 'kinyarwanda';
+        if (choice === '0') {
           console.log('Going back to welcome screen from weight input after back');
           session.state = 'welcome';
           session.lastInputLevel = 3;
@@ -249,8 +281,8 @@ function processUSSDFlow(input, sessionId) {
     }
 
     // Handle back from height input
-    if (prevChoice === "0") {
-      if (choice === "0") {
+    if (prevChoice === '0') {
+      if (choice === '0') {
         console.log('Going back to welcome screen from weight input after back from height');
         session.state = 'welcome';
         session.lastInputLevel = 3;
@@ -269,14 +301,14 @@ function processUSSDFlow(input, sessionId) {
     }
 
     // Handle result screen choices
-    if (choice === "0") {
+    if (choice === '0') {
       console.log('Going back to height input from result screen');
       session.state = 'height';
       session.lastInputLevel = 3;
       return MESSAGES[lang].ENTER_HEIGHT;
     }
 
-    if (choice === "1") {
+    if (choice === '1') {
       session.state = 'tips';
       session.lastInputLevel = 4;
       console.log('Displaying health tips for category:', session.category);
@@ -287,20 +319,40 @@ function processUSSDFlow(input, sessionId) {
     }
   }
 
-  // Fifth level: Back from health tips
+  // Fifth level: Back from health tips or language selection after multiple backs
   if (input.length === 5) {
     const lang = session.language;
     const prevPrevPrevChoice = input[1]; // Weight or back
     const prevPrevChoice = input[2]; // Height or language
-    const prevChoice = input[3]; // Result screen choice
+    const prevChoice = input[3]; // Result screen choice or back
     const choice = input[4];
 
+    // If state is welcome, treat choice as language selection
+    if (session.state === 'welcome') {
+      if (choice === '1') {
+        session.language = 'french';
+        session.state = 'weight';
+        session.lastInputLevel = 4;
+        console.log('Language selected after multiple backs: French');
+        return MESSAGES.french.ENTER_WEIGHT;
+      } else if (choice === '2') {
+        session.language = 'kinyarwanda';
+        session.state = 'weight';
+        session.lastInputLevel = 4;
+        console.log('Language selected after multiple backs: Kinyarwanda');
+        return MESSAGES.kinyarwanda.ENTER_WEIGHT;
+      } else {
+        console.log('Invalid language selection after multiple backs:', choice);
+        return MESSAGES.french.INVALID;
+      }
+    }
+
     // Handle back from weight input
-    if (prevPrevPrevChoice === "0") {
-      const newLang = prevPrevChoice === "1" ? "french" : "kinyarwanda";
-      if (prevChoice === "0") {
+    if (prevPrevPrevChoice === '0') {
+      const newLang = prevPrevChoice === '1' ? 'french' : 'kinyarwanda';
+      if (prevChoice === '0') {
         // Back from weight input after language selection
-        if (choice === "0") {
+        if (choice === '0') {
           console.log('Going back to welcome screen from weight input after multiple backs');
           session.state = 'welcome';
           session.lastInputLevel = 4;
@@ -321,9 +373,9 @@ function processUSSDFlow(input, sessionId) {
     }
 
     // Handle back from height input
-    if (prevPrevChoice === "0") {
-      if (prevChoice === "0") {
-        if (choice === "0") {
+    if (prevPrevChoice === '0') {
+      if (prevChoice === '0') {
+        if (choice === '0') {
           console.log('Going back to welcome screen from weight input after back from height');
           session.state = 'welcome';
           session.lastInputLevel = 4;
@@ -343,8 +395,8 @@ function processUSSDFlow(input, sessionId) {
     }
 
     // Handle back from result screen
-    if (prevChoice === "0") {
-      if (choice === "0") {
+    if (prevChoice === '0') {
+      if (choice === '0') {
         console.log('Going back to height input from result screen after back');
         session.state = 'height';
         session.lastInputLevel = 4;
@@ -356,7 +408,7 @@ function processUSSDFlow(input, sessionId) {
     }
 
     // Handle back from tips screen
-    if (choice === "0") {
+    if (choice === '0') {
       console.log('Going back to result screen from tips');
       session.state = 'result';
       session.lastInputLevel = 4;
