@@ -1,13 +1,154 @@
 const http = require('http');
 const querystring = require('querystring');
+const { Pool } = require('pg');
+
+// Database configuration
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Your Neon database connection string
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Database initialization
+async function initializeDatabase() {
+  try {
+    // Create sessions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ussd_sessions (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        current_state VARCHAR(50) NOT NULL,
+        language VARCHAR(20) DEFAULT 'french',
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create BMI results table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bmi_results (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        age INTEGER,
+        height DECIMAL(5,2) NOT NULL,
+        weight DECIMAL(5,2) NOT NULL,
+        bmi DECIMAL(4,1) NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES ussd_sessions(session_id)
+      )
+    `);
+
+    // Create indexes for better performance
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_phone ON ussd_sessions(phone_number);
+      CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON ussd_sessions(session_id);
+      CREATE INDEX IF NOT EXISTS idx_bmi_phone ON bmi_results(phone_number);
+      CREATE INDEX IF NOT EXISTS idx_bmi_session ON bmi_results(session_id);
+    `);
+
+    console.log('✅ Database tables initialized successfully');
+  } catch (error) {
+    console.error('❌ Database initialization error:', error);
+    throw error;
+  }
+}
+
+// Database helper functions
+async function createOrUpdateSession(sessionId, phoneNumber, state, language = 'french', status = 'active') {
+  try {
+    const query = `
+      INSERT INTO ussd_sessions (session_id, phone_number, current_state, language, status, updated_at)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      ON CONFLICT (session_id) 
+      DO UPDATE SET 
+        current_state = $3,
+        language = $4,
+        status = $5,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [sessionId, phoneNumber, state, language, status]);
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error creating/updating session:', error);
+    throw error;
+  }
+}
+
+async function getSession(sessionId) {
+  try {
+    const query = 'SELECT * FROM ussd_sessions WHERE session_id = $1';
+    const result = await pool.query(query, [sessionId]);
+    return result.rows[0] || null;
+  } catch (error) {
+    console.error('Error getting session:', error);
+    throw error;
+  }
+}
+
+async function saveBMIResult(sessionId, phoneNumber, age, height, weight, bmi, category) {
+  try {
+    const query = `
+      INSERT INTO bmi_results (session_id, phone_number, age, height, weight, bmi, category)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [sessionId, phoneNumber, age, height, weight, bmi, category]);
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error saving BMI result:', error);
+    throw error;
+  }
+}
+
+async function updateSessionStatus(sessionId, status) {
+  try {
+    const query = `
+      UPDATE ussd_sessions 
+      SET status = $2, updated_at = CURRENT_TIMESTAMP 
+      WHERE session_id = $1
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [sessionId, status]);
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error updating session status:', error);
+    throw error;
+  }
+}
+
+// Cleanup old sessions (older than 30 minutes)
+async function cleanupOldSessions() {
+  try {
+    const query = `
+      UPDATE ussd_sessions 
+      SET status = 'expired' 
+      WHERE updated_at < NOW() - INTERVAL '30 minutes' 
+      AND status = 'active'
+    `;
+    
+    await pool.query(query);
+  } catch (error) {
+    console.error('Error cleaning up old sessions:', error);
+  }
+}
 
 // Constants for messages
 const MESSAGES = {
   french: {
     WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
+    ENTER_AGE: "CON Entrez votre âge (ex., 25) :\n0. Retour\n\nChoisissez un numéro :",
     ENTER_WEIGHT: "CON Entrez votre poids en kilogrammes (ex., 70) :\n0. Retour\n\nChoisissez un numéro :",
     ENTER_HEIGHT: "CON Entrez votre taille en centimètres (ex., 170) :\n0. Retour\n\nChoisissez un numéro :",
-    BMI_RESULT: "CON Votre IMC est %s\nCatégorie : %s\n1. Conseils de santé\n0. Retour\n\nChoisissez un numéro :",
+    BMI_RESULT: "CON Votre IMC est %s\nCatégorie : %s\n1. Conseils de santé\n2. Voir historique\n0. Retour\n\nChoisissez un numéro :",
     HEALTH_TIPS: {
       underweight: "CON Conseils : Mangez des aliments riches en nutriments, augmentez l'apport calorique, consultez un diététicien.\n0. Retour\n\nChoisissez un numéro :",
       normal: "CON Conseils : Maintenez une alimentation équilibrée, faites de l'exercice régulièrement, restez hydraté.\n0. Retour\n\nChoisissez un numéro :",
@@ -16,13 +157,15 @@ const MESSAGES = {
     },
     INVALID: "END Entrée invalide. Veuillez réessayer.",
     INVALID_CHOICE: "END Choix invalide. Veuillez réessayer.",
-    ERROR: "END Le système est en maintenance. Veuillez réessayer plus tard."
+    ERROR: "END Le système est en maintenance. Veuillez réessayer plus tard.",
+    HISTORY: "CON Historique de vos 3 derniers calculs IMC :\n%s\n0. Retour\n\nChoisissez un numéro :"
   },
   kinyarwanda: {
     WELCOME: "CON Bienvenue à la Calculatrice IMC / Murakaza neza kuri BMI Calculator\nVeuillez sélectionner la langue / Hitamo ururimi\n1. Français\n2. Kinyarwanda",
+    ENTER_AGE: "CON Injiza imyaka yawe (urugero, 25) :\n0. Subira inyuma\n\nHitamo nimero :",
     ENTER_WEIGHT: "CON Injiza ibiro byawe muri kilogarama (urugero, 70) :\n0. Subira inyuma\n\nHitamo nimero :",
     ENTER_HEIGHT: "CON Injiza uburebure bwawe muri santimetero (urugero, 170) :\n0. Subira inyuma\n\nHitamo nimero :",
-    BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n0. Subira inyuma\n\nHitamo nimero :",
+    BMI_RESULT: "CON BMI yawe ni %s\nIcyiciro : %s\n1. Inama z'ubuzima\n2. Reba amateka\n0. Subira inyuma\n\nHitamo nimero :",
     HEALTH_TIPS: {
       underweight: "CON Inama : Fata ibiryo biryoshye, ongeramo kalori, wasanga umuganga w'imirire.\n0. Subira inyuma\n\nHitamo nimero :",
       normal: "CON Inama : Komeza kurya ibiryo biringanije, korikora imyirambere, unywe amazi ahagije.\n0. Subira inyuma\n\nHitamo nimero :",
@@ -31,36 +174,39 @@ const MESSAGES = {
     },
     INVALID: "END Injiza nabi. Ongera ugerageze.",
     INVALID_CHOICE: "END Guhitamo nabi. Ongera ugerageze.",
-    ERROR: "END Sisitemu iri mu bikorwa byo kuyisana. Ongera ugerageze nyuma."
+    ERROR: "END Sisitemu iri mu bikorwa byo kuyisana. Ongera ugerageze nyuma.",
+    HISTORY: "CON Amateka ya BMI yawe y'ibyashize 3 :\n%s\n0. Subira inyuma\n\nHitamo nimero :"
   }
 };
 
 // Navigation states
 const STATES = {
   WELCOME: 'welcome',
+  AGE: 'age',
   WEIGHT: 'weight',
   HEIGHT: 'height',
   RESULT: 'result',
-  TIPS: 'tips'
+  TIPS: 'tips',
+  HISTORY: 'history'
 };
 
-// In-memory session storage
+// In-memory session storage (for temporary data during session)
 const sessions = {};
 
 const server = http.createServer((req, res) => {
   if (req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk.toString());
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const parsedBody = querystring.parse(body);
         const text = (parsedBody.text || '').trim();
         const sessionId = parsedBody.sessionId || Date.now().toString();
         const phoneNumber = parsedBody.phoneNumber || 'unknown';
 
-        console.log('Received text:', text, 'Session ID:', sessionId);
+        console.log('Received text:', text, 'Session ID:', sessionId, 'Phone:', phoneNumber);
 
-        let response = processUSSDFlow(text, sessionId);
+        let response = await processUSSDFlow(text, sessionId, phoneNumber);
 
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end(response);
@@ -72,14 +218,17 @@ const server = http.createServer((req, res) => {
     });
   } else {
     res.writeHead(200);
-    res.end('USSD BMI Calculator service running.');
+    res.end('USSD BMI Calculator service running with Neon Database.');
   }
 });
 
-function initializeSession(sessionId) {
+function initializeSession(sessionId, phoneNumber) {
   return {
+    sessionId,
+    phoneNumber,
     state: STATES.WELCOME,
     language: 'french',
+    age: null,
     weight: null,
     height: null,
     bmi: null,
@@ -89,7 +238,7 @@ function initializeSession(sessionId) {
   };
 }
 
-function cleanupSessions() {
+function cleanupMemorySessions() {
   const now = Date.now();
   const THIRTY_MINUTES = 30 * 60 * 1000;
   
@@ -115,6 +264,14 @@ function goBack(session) {
   switch (session.state) {
     case STATES.WELCOME:
       session.language = 'french';
+      session.age = null;
+      session.weight = null;
+      session.height = null;
+      session.bmi = null;
+      session.category = null;
+      break;
+    case STATES.AGE:
+      session.age = null;
       session.weight = null;
       session.height = null;
       session.bmi = null;
@@ -180,89 +337,152 @@ function getCategoryTranslation(category, language) {
   return translations[language][category];
 }
 
-function processUSSDFlow(text, sessionId) {
-  // Initialize or get session
-  if (!sessions[sessionId]) {
-    sessions[sessionId] = initializeSession(sessionId);
-  }
-  
-  const session = sessions[sessionId];
-  session.lastActivity = Date.now();
-  
-  // Clean up old sessions
-  cleanupSessions();
-  
-  // Parse input - extract only numeric choices
-  const inputParts = text.split('*');
-  const lastInput = inputParts[inputParts.length - 1];
-  
-  console.log(`Session ${sessionId}: State=${session.state}, Input='${lastInput}', Stack=${JSON.stringify(session.navigationStack)}`);
-  
-  // Handle empty input or new session
-  if (!text || text === '') {
-    session.state = STATES.WELCOME;
-    session.navigationStack = [STATES.WELCOME];
-    return MESSAGES.french.WELCOME;
-  }
-  
-  // Route based on current state
-  switch (session.state) {
-    case STATES.WELCOME:
-      return handleWelcomeState(session, lastInput);
+async function getBMIHistory(phoneNumber, limit = 3) {
+  try {
+    const query = `
+      SELECT bmi, category, age, height, weight, created_at 
+      FROM bmi_results 
+      WHERE phone_number = $1 
+      ORDER BY created_at DESC 
+      LIMIT $2
+    `;
     
-    case STATES.WEIGHT:
-      return handleWeightState(session, lastInput);
-    
-    case STATES.HEIGHT:
-      return handleHeightState(session, lastInput);
-    
-    case STATES.RESULT:
-      return handleResultState(session, lastInput);
-    
-    case STATES.TIPS:
-      return handleTipsState(session, lastInput);
-    
-    default:
-      // Reset to welcome if unknown state
-      session.state = STATES.WELCOME;
-      session.navigationStack = [STATES.WELCOME];
-      return MESSAGES.french.WELCOME;
+    const result = await pool.query(query, [phoneNumber, limit]);
+    return result.rows;
+  } catch (error) {
+    console.error('Error getting BMI history:', error);
+    return [];
   }
 }
 
-function handleWelcomeState(session, input) {
+async function processUSSDFlow(text, sessionId, phoneNumber) {
+  try {
+    // Initialize or get session from memory
+    if (!sessions[sessionId]) {
+      sessions[sessionId] = initializeSession(sessionId, phoneNumber);
+    }
+    
+    const session = sessions[sessionId];
+    session.lastActivity = Date.now();
+    
+    // Clean up old sessions
+    cleanupMemorySessions();
+    await cleanupOldSessions();
+    
+    // Update session in database
+    await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language);
+    
+    // Parse input - extract only numeric choices
+    const inputParts = text.split('*');
+    const lastInput = inputParts[inputParts.length - 1];
+    
+    console.log(`Session ${sessionId}: State=${session.state}, Input='${lastInput}', Stack=${JSON.stringify(session.navigationStack)}`);
+    
+    // Handle empty input or new session
+    if (!text || text === '') {
+      session.state = STATES.WELCOME;
+      session.navigationStack = [STATES.WELCOME];
+      await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language);
+      return MESSAGES.french.WELCOME;
+    }
+    
+    // Route based on current state
+    switch (session.state) {
+      case STATES.WELCOME:
+        return await handleWelcomeState(session, lastInput);
+      
+      case STATES.AGE:
+        return await handleAgeState(session, lastInput);
+      
+      case STATES.WEIGHT:
+        return await handleWeightState(session, lastInput);
+      
+      case STATES.HEIGHT:
+        return await handleHeightState(session, lastInput);
+      
+      case STATES.RESULT:
+        return await handleResultState(session, lastInput);
+      
+      case STATES.TIPS:
+        return await handleTipsState(session, lastInput);
+      
+      case STATES.HISTORY:
+        return await handleHistoryState(session, lastInput);
+      
+      default:
+        // Reset to welcome if unknown state
+        session.state = STATES.WELCOME;
+        session.navigationStack = [STATES.WELCOME];
+        await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language);
+        return MESSAGES.french.WELCOME;
+    }
+  } catch (error) {
+    console.error('Error in processUSSDFlow:', error);
+    return MESSAGES.french.ERROR;
+  }
+}
+
+async function handleWelcomeState(session, input) {
   if (input === '1') {
     session.language = 'french';
-    navigateToState(session, STATES.WEIGHT);
+    navigateToState(session, STATES.AGE);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Language selected: French');
-    return MESSAGES.french.ENTER_WEIGHT;
+    return MESSAGES.french.ENTER_AGE;
   } else if (input === '2') {
     session.language = 'kinyarwanda';
-    navigateToState(session, STATES.WEIGHT);
+    navigateToState(session, STATES.AGE);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Language selected: Kinyarwanda');
-    return MESSAGES.kinyarwanda.ENTER_WEIGHT;
+    return MESSAGES.kinyarwanda.ENTER_AGE;
   } else if (input === '0') {
     // Already at welcome, show welcome again
     return MESSAGES.french.WELCOME;
   } else {
     console.log('Invalid language selection:', input);
+    await updateSessionStatus(session.sessionId, 'completed');
     return MESSAGES.french.INVALID;
   }
 }
 
-function handleWeightState(session, input) {
+async function handleAgeState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
     goBack(session);
-    console.log('Going back from weight input');
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    console.log('Going back from age input');
     return MESSAGES.french.WELCOME;
+  }
+  
+  const age = parseInt(input);
+  if (!isNaN(age) && age > 0 && age <= 120) {
+    session.age = age;
+    navigateToState(session, STATES.WEIGHT);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    console.log('Age entered:', age);
+    return MESSAGES[lang].ENTER_WEIGHT;
+  } else {
+    console.log('Invalid age input:', input);
+    return MESSAGES[lang].INVALID;
+  }
+}
+
+async function handleWeightState(session, input) {
+  const lang = session.language;
+  
+  if (input === '0') {
+    goBack(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    console.log('Going back from weight input');
+    return MESSAGES[lang].ENTER_AGE;
   }
   
   const weight = parseFloat(input);
   if (!isNaN(weight) && weight > 0 && weight <= 1000) {
     session.weight = weight;
     navigateToState(session, STATES.HEIGHT);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Weight entered:', weight);
     return MESSAGES[lang].ENTER_HEIGHT;
   } else {
@@ -271,11 +491,12 @@ function handleWeightState(session, input) {
   }
 }
 
-function handleHeightState(session, input) {
+async function handleHeightState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
     goBack(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Going back from height input');
     return MESSAGES[lang].ENTER_WEIGHT;
   }
@@ -289,7 +510,19 @@ function handleHeightState(session, input) {
     session.bmi = bmi;
     session.category = category;
     
+    // Save BMI result to database
+    await saveBMIResult(
+      session.sessionId, 
+      session.phoneNumber, 
+      session.age, 
+      session.height, 
+      session.weight, 
+      bmi, 
+      category
+    );
+    
     navigateToState(session, STATES.RESULT);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Height entered:', height, 'BMI:', bmi, 'Category:', category);
     
     const categoryTranslated = getCategoryTranslation(category, lang);
@@ -300,28 +533,50 @@ function handleHeightState(session, input) {
   }
 }
 
-function handleResultState(session, input) {
+async function handleResultState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
     goBack(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Going back from result screen');
     return MESSAGES[lang].ENTER_HEIGHT;
   } else if (input === '1') {
     navigateToState(session, STATES.TIPS);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Displaying health tips for category:', session.category);
     return MESSAGES[lang].HEALTH_TIPS[session.category];
+  } else if (input === '2') {
+    navigateToState(session, STATES.HISTORY);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    console.log('Displaying BMI history');
+    
+    const history = await getBMIHistory(session.phoneNumber);
+    let historyText = '';
+    
+    if (history.length === 0) {
+      historyText = lang === 'french' ? 'Aucun historique trouvé.' : 'Nta mateka yaboneka.';
+    } else {
+      history.forEach((record, index) => {
+        const date = new Date(record.created_at).toLocaleDateString();
+        const categoryTranslated = getCategoryTranslation(record.category, lang);
+        historyText += `${index + 1}. ${date}: BMI ${record.bmi} (${categoryTranslated})\n`;
+      });
+    }
+    
+    return MESSAGES[lang].HISTORY.replace('%s', historyText);
   } else {
     console.log('Invalid choice on result screen:', input);
     return MESSAGES[lang].INVALID_CHOICE;
   }
 }
 
-function handleTipsState(session, input) {
+async function handleTipsState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
     goBack(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
     console.log('Going back from tips screen');
     const categoryTranslated = getCategoryTranslation(session.category, lang);
     return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
@@ -331,8 +586,44 @@ function handleTipsState(session, input) {
   }
 }
 
+async function handleHistoryState(session, input) {
+  const lang = session.language;
+  
+  if (input === '0') {
+    goBack(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language);
+    console.log('Going back from history screen');
+    const categoryTranslated = getCategoryTranslation(session.category, lang);
+    return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
+  } else {
+    console.log('Invalid choice on history screen:', input);
+    return MESSAGES[lang].INVALID_CHOICE;
+  }
+}
+
 const PORT = process.env.PORT || 10000;
 
-server.listen(PORT, () => {
-  console.log(`✅ USSD BMI Calculator app is running on port ${PORT}`);
+// Initialize database and start server
+initializeDatabase()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`✅ USSD BMI Calculator app with Neon Database is running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('❌ Failed to initialize database:', error);
+    process.exit(1);
+  });
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  await pool.end();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT, shutting down gracefully...');
+  await pool.end();
+  process.exit(0);
 });
