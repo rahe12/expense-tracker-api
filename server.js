@@ -21,7 +21,7 @@ async function initializeDatabase() {
         phone_number VARCHAR(20) NOT NULL,
         current_state VARCHAR(50) NOT NULL,
         language VARCHAR(20) DEFAULT 'french',
-        status VARCHAR(20) DEFAULT 'completed',
+        status VARCHAR(20) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -59,7 +59,7 @@ async function initializeDatabase() {
 }
 
 // Database helper functions
-async function createOrUpdateSession(sessionId, phoneNumber, state, language = 'french', status = 'completed') {
+async function createOrUpdateSession(sessionId, phoneNumber, state, language = 'french', status = 'active') {
   try {
     const query = `
       INSERT INTO ussd_sessions (session_id, phone_number, current_state, language, status, updated_at)
@@ -132,7 +132,7 @@ async function cleanupOldSessions() {
       UPDATE ussd_sessions 
       SET status = 'expired' 
       WHERE updated_at < NOW() - INTERVAL '30 minutes' 
-      AND status = 'completed'
+      AND status = 'active'
     `;
     
     await pool.query(query);
@@ -196,6 +196,7 @@ const STATES = {
 
 // Session status constants
 const SESSION_STATUS = {
+  ACTIVE: 'active',
   COMPLETED: 'completed',
   TERMINATED: 'terminated',
   EXPIRED: 'expired'
@@ -255,7 +256,7 @@ function initializeSession(sessionId, phoneNumber) {
     height: null,
     bmi: null,
     category: null,
-    navigationStack: [STATES.WELCOME],
+    navigationStack: [],
     lastActivity: Date.now()
   };
 }
@@ -271,19 +272,35 @@ function cleanupMemorySessions() {
   }
 }
 
-function goBack(session) {
-  // Ensure stack has at least two states to go back
-  if (session.navigationStack.length > 1) {
-    session.navigationStack.pop();
-    session.state = session.navigationStack[session.navigationStack.length - 1];
-  } else {
-    // If at WELCOME or stack is invalid, reset to WELCOME
-    session.state = STATES.WELCOME;
-    session.navigationStack = [STATES.WELCOME];
+function pushToNavigationStack(session, state) {
+  // Add current state to navigation stack before moving to new state
+  if (session.state && session.state !== state) {
+    session.navigationStack.push(session.state);
   }
-  
-  // Clear data based on the new state
-  switch (session.state) {
+  session.state = state;
+  console.log(`Navigated to state: ${session.state}, Stack: ${JSON.stringify(session.navigationStack)}`);
+}
+
+function goBackToPreviousState(session) {
+  if (session.navigationStack.length > 0) {
+    // Pop the last state from the stack
+    const previousState = session.navigationStack.pop();
+    session.state = previousState;
+    
+    // Clear relevant data based on the state we're going back to
+    clearDataForState(session, previousState);
+    
+    console.log(`Navigated back to state: ${session.state}, Stack: ${JSON.stringify(session.navigationStack)}`);
+    return true;
+  } else {
+    // If no previous state, go to welcome
+    resetToWelcome(session);
+    return false;
+  }
+}
+
+function clearDataForState(session, state) {
+  switch (state) {
     case STATES.WELCOME:
       session.language = 'french';
       session.age = null;
@@ -311,35 +328,18 @@ function goBack(session) {
       session.category = null;
       break;
     case STATES.RESULT:
-      session.bmi = null;
-      session.category = null;
+      // Keep all data for result display
       break;
     case STATES.TIPS:
     case STATES.HISTORY:
-      // No additional data to clear
+      // No data to clear for these states
       break;
   }
-  
-  console.log(`Navigated back to state: ${session.state}, Stack: ${JSON.stringify(session.navigationStack)}`);
-}
-
-function navigateToState(session, newState) {
-  // Validate new state
-  if (!Object.values(STATES).includes(newState)) {
-    console.error(`Invalid state transition attempted: ${newState}`);
-    session.state = STATES.WELCOME;
-    session.navigationStack = [STATES.WELCOME];
-  } else {
-    session.state = newState;
-    session.navigationStack.push(newState);
-  }
-  
-  console.log(`Navigated to state: ${session.state}, Stack: ${JSON.stringify(session.navigationStack)}`);
 }
 
 function resetToWelcome(session) {
   session.state = STATES.WELCOME;
-  session.navigationStack = [STATES.WELCOME];
+  session.navigationStack = [];
   session.language = 'french';
   session.age = null;
   session.weight = null;
@@ -404,6 +404,39 @@ async function getBMIHistory(phoneNumber, limit = 3) {
   }
 }
 
+function getStateResponse(session) {
+  const lang = session.language;
+  
+  switch (session.state) {
+    case STATES.WELCOME:
+      return MESSAGES.french.WELCOME; // Always show bilingual welcome
+    case STATES.AGE:
+      return MESSAGES[lang].ENTER_AGE;
+    case STATES.WEIGHT:
+      return MESSAGES[lang].ENTER_WEIGHT;
+    case STATES.HEIGHT:
+      return MESSAGES[lang].ENTER_HEIGHT;
+    case STATES.RESULT:
+      if (session.bmi && session.category) {
+        const categoryTranslated = getCategoryTranslation(session.category, lang);
+        return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
+      }
+      break;
+    case STATES.TIPS:
+      if (session.category) {
+        return MESSAGES[lang].HEALTH_TIPS[session.category];
+      }
+      break;
+    case STATES.HISTORY:
+      // This will be handled separately as it requires async operation
+      break;
+  }
+  
+  // Fallback to welcome if something goes wrong
+  resetToWelcome(session);
+  return MESSAGES.french.WELCOME;
+}
+
 async function processUSSDFlow(text, sessionId, phoneNumber) {
   try {
     // Initialize or get session from memory
@@ -418,7 +451,7 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
     cleanupMemorySessions();
     await cleanupOldSessions();
     
-    // Parse input - extract only numeric choices
+    // Parse input - extract only the last part after the last '*'
     const inputParts = text.split('*');
     const lastInput = inputParts[inputParts.length - 1];
     
@@ -426,9 +459,8 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
     
     // Handle empty input or new session
     if (!text || text === '') {
-      session.state = STATES.WELCOME;
-      session.navigationStack = [STATES.WELCOME];
-      await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+      resetToWelcome(session);
+      await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
       return MESSAGES.french.WELCOME;
     }
     
@@ -466,7 +498,7 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
       default:
         console.error(`Unknown state: ${session.state}`);
         resetToWelcome(session);
-        await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+        await createOrUpdateSession(sessionId, phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
         return MESSAGES.french.WELCOME;
     }
   } catch (error) {
@@ -479,20 +511,20 @@ async function processUSSDFlow(text, sessionId, phoneNumber) {
 
 async function handleWelcomeState(session, input) {
   if (input === '0') {
-    // Stay at WELCOME
+    // Stay at WELCOME - refresh the welcome screen
     console.log('Staying at WELCOME state');
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     return MESSAGES.french.WELCOME;
   } else if (input === '1') {
     session.language = 'french';
-    navigateToState(session, STATES.AGE);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.AGE);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Language selected: French');
     return MESSAGES.french.ENTER_AGE;
   } else if (input === '2') {
     session.language = 'kinyarwanda';
-    navigateToState(session, STATES.AGE);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.AGE);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Language selected: Kinyarwanda');
     return MESSAGES.kinyarwanda.ENTER_AGE;
   } else {
@@ -507,17 +539,17 @@ async function handleAgeState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    resetToWelcome(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    goBackToPreviousState(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back to main menu from age input');
-    return MESSAGES.french.WELCOME;
+    return getStateResponse(session);
   }
   
   const age = parseInt(input);
   if (!isNaN(age) && age > 0 && age <= 120) {
     session.age = age;
-    navigateToState(session, STATES.WEIGHT);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.WEIGHT);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Age entered:', age);
     return MESSAGES[lang].ENTER_WEIGHT;
   } else {
@@ -532,17 +564,17 @@ async function handleWeightState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    goBackToPreviousState(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from weight input');
-    return MESSAGES[lang].ENTER_AGE;
+    return getStateResponse(session);
   }
   
   const weight = parseFloat(input);
   if (!isNaN(weight) && weight > 0 && weight <= 1000) {
     session.weight = weight;
-    navigateToState(session, STATES.HEIGHT);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.HEIGHT);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Weight entered:', weight);
     return MESSAGES[lang].ENTER_HEIGHT;
   } else {
@@ -557,10 +589,10 @@ async function handleHeightState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    goBackToPreviousState(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from height input');
-    return MESSAGES[lang].ENTER_WEIGHT;
+    return getStateResponse(session);
   }
   
   const height = parseFloat(input);
@@ -583,8 +615,8 @@ async function handleHeightState(session, input) {
       category
     );
     
-    navigateToState(session, STATES.RESULT);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.RESULT);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Height entered:', height, 'BMI:', bmi, 'Category:', category);
     
     const categoryTranslated = getCategoryTranslation(category, lang);
@@ -601,24 +633,24 @@ async function handleResultState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    // New calculation - reset to age input
+    // New calculation - go back to age input but clear calculation data
     session.age = null;
     session.weight = null;
     session.height = null;
     session.bmi = null;
     session.category = null;
-    navigateToState(session, STATES.AGE);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.AGE);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Starting new calculation');
     return MESSAGES[lang].ENTER_AGE;
   } else if (input === '1') {
-    navigateToState(session, STATES.TIPS);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.TIPS);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Displaying health tips for category:', session.category);
     return MESSAGES[lang].HEALTH_TIPS[session.category];
   } else if (input === '2') {
-    navigateToState(session, STATES.HISTORY);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    pushToNavigationStack(session, STATES.HISTORY);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Displaying BMI history');
     
     const history = await getBMIHistory(session.phoneNumber);
@@ -647,11 +679,10 @@ async function handleTipsState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    goBackToPreviousState(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from tips screen');
-    const categoryTranslated = getCategoryTranslation(session.category, lang);
-    return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
+    return getStateResponse(session);
   } else {
     console.log('Invalid choice on tips screen:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
@@ -664,11 +695,10 @@ async function handleHistoryState(session, input) {
   const lang = session.language;
   
   if (input === '0') {
-    goBack(session);
-    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.COMPLETED);
+    goBackToPreviousState(session);
+    await createOrUpdateSession(session.sessionId, session.phoneNumber, session.state, session.language, SESSION_STATUS.ACTIVE);
     console.log('Going back from history screen');
-    const categoryTranslated = getCategoryTranslation(session.category, lang);
-    return MESSAGES[lang].BMI_RESULT.replace('%s', session.bmi).replace('%s', categoryTranslated);
+    return getStateResponse(session);
   } else {
     console.log('Invalid choice on history screen:', input);
     await updateSessionStatus(session.sessionId, SESSION_STATUS.TERMINATED);
@@ -677,29 +707,60 @@ async function handleHistoryState(session, input) {
   }
 }
 
-const PORT = process.env.PORT || 10000;
+// Start the server and initialize database
+const PORT = process.env.PORT || 3000;
 
-// Initialize database and start server
-initializeDatabase()
-  .then(() => {
+async function startServer() {
+  try {
+    // Initialize database before starting server
+    await initializeDatabase();
+    
+    // Start HTTP server
     server.listen(PORT, () => {
-      console.log(`✅ USSD BMI Calculator app with Neon database is running on port ${PORT}`);
+      console.log(`Server running on port ${PORT}`);
+      
+      // Set up periodic cleanup of old sessions
+      setInterval(cleanupMemorySessions, 5 * 60 * 1000); // Run every 5 minutes
+      setInterval(cleanupOldSessions, 5 * 60 * 1000); // Run every 5 minutes
     });
-  })
-  .catch((error) => {
-    console.error('❌ Failed to initialize database:', error);
+  } catch (error) {
+    console.error('Failed to start server:', error);
     process.exit(1);
+  }
+}
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM. Performing graceful shutdown...');
+  
+  server.close(async () => {
+    try {
+      await pool.end();
+      console.log('Database connection closed');
+      console.log('Server shut down successfully');
+      process.exit(0);
+    } catch (error) {
+      console.error('Error during shutdown:', error);
+      process.exit(1);
+    }
   });
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('Shutting down gracefully...');
-  await pool.end();
-  process.exit(0);
 });
 
-process.on('SIGINT', async () => {
-  console.log('Shutting down gracefully...');
-  await pool.end();
-  process.exit(0);
+process.on('SIGINT', () => {
+  console.log('Received SIGINT. Performing graceful shutdown...');
+  
+  server.close(async () => {
+    try {
+      await pool.end();
+      console.log('Database connection closed');
+      console.log('Server shut down successfully');
+      process.exit(0);
+    } catch (error) {
+      console.error('Error during shutdown:', error);
+      process.exit(1);
+    }
+  });
 });
+
+// Start the application
+startServer();
